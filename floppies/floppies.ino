@@ -1,13 +1,16 @@
 #include "hardware_defs.h"
 #include "midi.h"
 
-unsigned int micros_per_tick=1; //TODO MAKE MEANINGFUL
+#include "TimerOne.h"
+
+unsigned int micros_per_tick=40;
 
 byte current_pos[NUM_FLOPPIES];
 byte current_dir[NUM_FLOPPIES];
 byte current_note[NUM_FLOPPIES];
 unsigned int period_ticks[NUM_FLOPPIES];
 unsigned int ticks_since_step[NUM_FLOPPIES];
+byte last_cmd=0;
 
 void setupPins();
 void tick();
@@ -15,10 +18,15 @@ void playNote(byte note, byte velocity);
 void stopNote(byte note);
 void stepFloppy(byte floppy, byte dir);
 void resetAll();
-unsigned int period_from_note_number(byte note);
+void pulseAll();
+void testAll();
 
 void setup() {
-  resetAll(); //move the heads to one extreme at start
+  setupPins();
+  resetAll(); // move the heads to one extreme at start
+  // if desired, testAll() should be called here
+  Timer1.initialize(micros_per_tick); // Set up a timer at the defined resolution
+  Timer1.attachInterrupt(tick); // Attach the tick function
   SERIAL_BEGIN(MIDI_BAUD);
 }
 
@@ -26,22 +34,40 @@ void loop() {
   byte incomingByte;
   byte note;
   byte velocity;
+  
   if (SERIAL_AVAILABLE()>0) {
     // read the incoming byte:
     incomingByte = SERIAL_READ();
-
-    // wait for as status-byte, channel 1, note on or off
-    if (incomingByte == 144) { // note on message starting starting
+    if (incomingByte == 144) { // note on message starting
+      while (!SERIAL_AVAILABLE());
       note=SERIAL_READ();
+      while (!SERIAL_AVAILABLE());
       velocity=SERIAL_READ();
       playNote(note, velocity);
+      last_cmd=144;
     }
     else if (incomingByte == 128) { // note off message starting
+      while (!SERIAL_AVAILABLE());
       note=SERIAL_READ();
+      while (!SERIAL_AVAILABLE());
+      SERIAL_READ();
+      stopNote(note);
+      last_cmd=128;
+    } else if (incomingByte < 128 && last_cmd == 144) { // data byte, assume it's a continuation of the last command
+      while (!SERIAL_AVAILABLE());
+      note=incomingByte;
+      while (!SERIAL_AVAILABLE());
+      velocity=SERIAL_READ();
+      playNote(note, velocity);
+    } else if (incomingByte < 128 && last_cmd == 128) { // data byte, assume it's a continuation of the last command
+      while (!SERIAL_AVAILABLE());
+      note=incomingByte;
+      while (!SERIAL_AVAILABLE());
+      SERIAL_READ();
       stopNote(note);
     }
     else {
-      //do nothing
+      // no other commands implemented
     }
   }
 }
@@ -51,7 +77,7 @@ void setupPins() {
     pinMode(STEP_PIN(i), OUTPUT);
     pinMode(DIR_PIN(i), OUTPUT);
     pinMode(GND_PIN(i), OUTPUT);
-    digitalWrite(GND_PIN(i), LOW); //set the ground pin 
+    digitalWrite(GND_PIN(i), LOW); // set the ground pin 
   }
 }
 
@@ -59,14 +85,14 @@ void tick() {
   for (byte i=0; i<NUM_FLOPPIES; i++) {
     if (period_ticks[i]!=0) {
       ticks_since_step[i]++;
-      //if this floppy is due to be stepped again
-      if (ticks_since_step[i] > period_ticks[i++]) {
-        //switch directions if needed
+      // if this floppy is due to be stepped again
+      if (ticks_since_step[i] > period_ticks[i]) {
+        // switch directions if needed
         if ((current_pos[i]==0 && current_dir[i]==0) || (current_pos[i]==(NUM_TRACKS-1) && current_dir[i]==1)) {
           current_dir[i]=!current_dir[i];
         }
         stepFloppy(i, current_dir[i]);
-        //start counting from zero again
+        // start counting from zero again
         ticks_since_step[i]=0;
       }
     }
@@ -98,11 +124,12 @@ void playNote(byte note, byte velocity) {
   }
 
   for (floppy=0; floppy<NUM_FLOPPIES; floppy++) {
-    //if this floppy is not in use
+    // if this floppy is not in use
     if (current_note[floppy]==0) {
       byte tmpDir;
       byte availableTracks;
-      //figure out in which direction it has more tracks available (avoids unnecessary direction-switching)
+      
+      // figure out in which direction it has more tracks available (avoids unnecessary direction-switching)
       if (current_pos[floppy]<(NUM_TRACKS/2)) {
         availableTracks=NUM_TRACKS-1-current_pos[floppy];
         tmpDir=0;
@@ -110,7 +137,8 @@ void playNote(byte note, byte velocity) {
         availableTracks=current_pos[floppy]-1;
         tmpDir=1;
       }
-      //if it's better than the previous option, replace those values
+
+      // if it's better than the previous option, replace those values
       if (availableTracks>desiredIndexAvailableTracks) {
         desiredIndex=floppy;
         desiredIndexAvailableTracks=availableTracks;
@@ -118,14 +146,14 @@ void playNote(byte note, byte velocity) {
       }
     }
   }
-  //if we found something
+  // if we found something
   if (desiredIndex!=-1) {
-    //set the values indicating what the floppy is doing
+    // set the values indicating what the floppy is doing
     period_ticks[desiredIndex]=period;
     current_note[desiredIndex]=note;
     current_dir[desiredIndex]=desiredDir;
     
-    //step it now to get the note started ASAP
+    // step it now to get the note started ASAP
     stepFloppy(desiredIndex, desiredDir);
     ticks_since_step[desiredIndex]=0;
   }
@@ -136,7 +164,7 @@ void stepFloppy(byte floppy, byte dir) {
   digitalWrite(STEP_PIN(floppy), HIGH);
   digitalWrite(STEP_PIN(floppy), LOW);
   
-  //don't let the current_pos move beyond the number of tracks
+  // don't let the current_pos move beyond the number of tracks
   if (current_pos[floppy]<(NUM_TRACKS-1) && dir) {
     current_pos[floppy]++;
   } else if (current_pos[floppy]>0 && !dir) {
@@ -145,11 +173,36 @@ void stepFloppy(byte floppy, byte dir) {
 }
 
 void resetAll() {
-  for (int i=0; i<NUM_TRACKS; i++) {
+  for (byte i=0; i<NUM_TRACKS; i++) {
     for (byte floppy=0; floppy<NUM_FLOPPIES; floppy++) {
       stepFloppy(floppy, 0);
     }
+    delay(5);
   }
 }
 
+void pulseAll() {
+  for (byte floppy=0; floppy<NUM_FLOPPIES; floppy++) {
+    stepFloppy(floppy, 1);
+  }
+  delay(5);
+  for (byte floppy=0; floppy<NUM_FLOPPIES; floppy++) {
+    stepFloppy(floppy, 0);
+  }  
+}
 
+void testAll() {
+  pulseAll();
+  for (byte floppy=0; floppy<NUM_FLOPPIES; floppy++) {
+    for (byte track=0; track<NUM_TRACKS; track++) {
+      stepFloppy(floppy, 1);
+      delay(5);
+    }
+    pulseAll();
+    for (byte track=0; track<NUM_TRACKS; track++) {
+      stepFloppy(floppy, 0);
+      delay(5);
+    }
+    pulseAll();
+  }
+}

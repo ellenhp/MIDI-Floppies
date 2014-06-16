@@ -39,21 +39,21 @@ void loop() {
   if (SERIAL_AVAILABLE()>0) {
     // read the incoming byte:
     incomingByte = SERIAL_READ();
-    if (incomingByte == 144) { // note on message starting
+    if (incomingByte >= 144 && incomingByte < 160) { // note on message starting
       while (!SERIAL_AVAILABLE());
       note=SERIAL_READ();
       while (!SERIAL_AVAILABLE());
       velocity=SERIAL_READ();
       playNote(note, velocity);
-      last_cmd=144;
+      last_cmd=incomingByte;
     }
-    else if (incomingByte == 128) { // note off message starting
+    else if (incomingByte >= 128 && incomingByte < 144) { // note off message starting
       while (!SERIAL_AVAILABLE());
       note=SERIAL_READ();
       while (!SERIAL_AVAILABLE());
       SERIAL_READ();
       stopNote(note);
-      last_cmd=128;
+      last_cmd=incomingByte;
     } 
     else if (incomingByte < 128 && last_cmd == 144) { // data byte, assume it's a continuation of the last command
       note=incomingByte;
@@ -112,6 +112,7 @@ void stopNote(byte note) {
 void playNote(byte note, byte velocity) {
   if (velocity==0) {
     stopNote(note);
+    return;
   }
   byte floppy;
   signed int desiredIndex=-1; // the index of the floppy that we want to use

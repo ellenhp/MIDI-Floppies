@@ -5,12 +5,12 @@ This project allows users to control floppy drives with a MIDI keyboard. It supp
 
 Currently, standalone use or use with a computer is not possible, however these features will likely be added to enable users to use this project as a simpler and cleaner alternative to Moppy.
 
-DEPENDENCIES
+Dependencies
 ============
 
 This project carries one dependency, TimerOne. You can find this project here: https://code.google.com/p/arduino-timerone/
 
-CONFIGURATION
+Configuration
 =============
 
 Make sure to copy the "hardware_defs_template.h" file into the floppies folder and rename it "hardware_defs.h". You should also open it and look at it a little to see if it works for your needs. It will almost certainly need to be changed slightly!

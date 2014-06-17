@@ -3,7 +3,7 @@ MIDI-Floppies
 
 This project allows users to control floppy drives with a MIDI keyboard. It supports an arbitrary number of floppy drives and is easily customizable to meet the needs of different users. MIDI connected to UART 1 instead of UART 0 on Arduino Mega? Not a problem. Wiring your floppies in your own special way? Not a problem. Just change the appropriate lines of the hardware_defs.h file in either case. No need to reverse-engineer the code.
 
-Currently, standalone use or use with a computer is not possible, however these features will likely be added to enable users to use this project as a simpler and cleaner alternative to Moppy.
+Currently the easiest way to use it with a computer is to send MIDI commands over the Arduino's built-in serial interface. Programs like Hairless MIDI<->Serial Bridge make this easy. To do this, change the baud rate in hardware_defs.h to something standard that the Arduino's FTDI chip can handle. I used 38400 because it's easy to remember and slightly faster than the default MIDI baud rate, then configure Hairless MIDI<->Serial Bridge according to the instructions for your platform.
 
 Dependencies
 ============
